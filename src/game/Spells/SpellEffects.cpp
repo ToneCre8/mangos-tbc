@@ -2889,12 +2889,8 @@ void Spell::EffectDummy(SpellEffectIndex eff_idx)
     // Script based implementation. Must be used only for not good for implementation in core spell effects
     // So called only for not processed cases
     bool libraryResult = false;
-    if (gameObjTarget)
-        libraryResult = sScriptDevAIMgr.OnEffectDummy(m_caster, m_spellInfo->Id, eff_idx, gameObjTarget, m_originalCasterGUID);
-    else if (unitTarget && unitTarget->GetTypeId() == TYPEID_UNIT)
+    if (unitTarget && unitTarget->GetTypeId() == TYPEID_UNIT)
         libraryResult = sScriptDevAIMgr.OnEffectDummy(m_caster, m_spellInfo->Id, eff_idx, (Creature*)unitTarget, m_originalCasterGUID);
-    else if (itemTarget)
-        libraryResult = sScriptDevAIMgr.OnEffectDummy(m_caster, m_spellInfo->Id, eff_idx, itemTarget, m_originalCasterGUID);
 
     if (libraryResult || (!unitTarget && !gameObjTarget))
         return;
@@ -5814,6 +5810,7 @@ void Spell::EffectScriptEffect(SpellEffectIndex eff_idx)
                     return;
                 }
                 case 10101:                                 // Knock Away variants
+                case 18103:
                 case 18670:
                 case 18813:
                 case 18945:
@@ -5847,6 +5844,7 @@ void Spell::EffectScriptEffect(SpellEffectIndex eff_idx)
                         case 40486:
                             pct = -25;
                             break;
+                        case 18103:                                 // Backhand - Doctor Theolen Krastinov 11261
                         case 22920:                                 // Arcane Blast - Prince Tortheldrin 11486
                         case 30013:                                 // Disarm - Ethereal Thief 16544
                         case 37317:                                 // Knockback - Tempest Falconer 20037
@@ -6998,14 +6996,6 @@ void Spell::EffectScriptEffect(SpellEffectIndex eff_idx)
     // normal DB scripted effect
     if (!unitTarget && !gameObjTarget)
         return;
-
-    // Script based implementation. Must be used only for not good for implementation in core spell effects
-    // So called only for not processed cases
-    if (unitTarget->GetTypeId() == TYPEID_UNIT)
-    {
-        if (sScriptDevAIMgr.OnEffectScriptEffect(m_caster, m_spellInfo->Id, eff_idx, (Creature*)unitTarget, m_originalCasterGUID))
-            return;
-    }
 
     // Previous effect might have started script
     if (!ScriptMgr::CanSpellEffectStartDBScript(m_spellInfo, eff_idx))
