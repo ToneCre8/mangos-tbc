@@ -1650,10 +1650,11 @@ void Player::Heartbeat()
 }
 
 #ifdef ENABLE_PLAYERBOTS
-void Player::CreatePlayerbotAI()
+void Player::CreatePlayerbotAI(std::unique_ptr<PlayerbotAI> ai)
 {
-    assert(!m_playerbotAI);
-    m_playerbotAI = std::make_unique<PlayerbotAI>(this);
+    assert(!m_playerbotAI);        // Ensure we don't overwrite an existing AI
+    assert(ai);                    // Ensure caller passed a valid one
+    m_playerbotAI = std::move(ai); // Transfer ownership
 }
 
 void Player::RemovePlayerbotAI()
