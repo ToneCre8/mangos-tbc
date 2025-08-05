@@ -708,7 +708,7 @@ Player::~Player()
     }
 #endif
 
-#ifdef ENABLE_PLAYERBOTS
+#ifdef ENABLE_PLAYERBOTS    
     RemovePlayerbotAI();
     RemovePlayerbotMgr();
 #endif
