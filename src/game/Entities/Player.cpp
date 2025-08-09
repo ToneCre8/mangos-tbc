@@ -76,6 +76,10 @@
 #include "playerbot/PlayerbotAIConfig.h"
 #endif
 
+#ifdef ENABLE_MODULES
+#include "ModuleMgr.h"
+#endif
+
 #include <cmath>
 
 #define ZONE_UPDATE_INTERVAL (1*IN_MILLISECONDS)
@@ -714,6 +718,10 @@ Player::~Player()
 #endif
 
     delete m_declinedname;
+	
+#ifdef ENABLE_MODULES
+    sModuleMgr.OnLogOut(this);
+#endif
 }
 
 void Player::CleanupsBeforeDelete()
@@ -773,6 +781,10 @@ bool Player::Create(uint32 guidlow, const std::string& name, uint8 race, uint8 c
     Object::_Create(guidlow, guidlow, 0, HIGHGUID_PLAYER);
 
     m_name = name;
+
+#ifdef ENABLE_MODULES
+    sModuleMgr.OnPreCharacterCreated(this);
+#endif
 
     PlayerInfo const* info = sObjectMgr.GetPlayerInfo(race, class_);
     if (!info)
@@ -974,6 +986,10 @@ bool Player::Create(uint32 guidlow, const std::string& name, uint8 race, uint8 c
     }
     // all item positions resolved
 
+#ifdef ENABLE_MODULES
+    sModuleMgr.OnCharacterCreated(this);
+#endif
+
     return true;
 }
 
@@ -1070,6 +1086,11 @@ uint32 Player::EnvironmentalDamage(EnviromentalDamage type, uint32 damage)
         WorldPacket data2(SMSG_DURABILITY_DAMAGE_DEATH, 0);
         GetSession()->SendPacket(data2);
     }
+
+#ifdef ENABLE_MODULES
+    if (!IsAlive())
+        sModuleMgr.OnDeath(this, type);
+#endif
 
     return final_damage;
 }
@@ -2469,6 +2490,22 @@ void Player::RegenerateHealth(uint32 diff)
     ModifyHealth(int32(addvalue * float(diff) / 1000));
 }
 
+void Player::ModifyMoney(int32 d)
+{
+	if (d < 0)
+		SetMoney(GetMoney() > uint32(-d) ? GetMoney() + d : 0);
+	else
+		SetMoney(GetMoney() < uint32(MAX_MONEY_AMOUNT - d) ? GetMoney() + d : MAX_MONEY_AMOUNT);
+
+	// "At Gold Limit"
+	if (GetMoney() >= MAX_MONEY_AMOUNT)
+		SendEquipError(EQUIP_ERR_TOO_MUCH_GOLD, nullptr, nullptr);
+
+#ifdef ENABLE_MODULES
+    sModuleMgr.OnModifyMoney(this, d);
+#endif
+}
+
 Creature* Player::GetNPCIfCanInteractWith(ObjectGuid guid, uint32 npcflagmask)
 {
     // some basic checks
@@ -2769,6 +2806,10 @@ void Player::GiveXP(uint32 xp, Creature* victim, float groupRate)
     }
 
     SetUInt32Value(PLAYER_XP, newXP);
+
+#ifdef ENABLE_MODULES
+    sModuleMgr.OnGiveXP(this, xp, victim);
+#endif
 }
 
 // Update player to next level
@@ -2782,6 +2823,10 @@ void Player::GiveLevel(uint32 level)
 
     PlayerLevelInfo info;
     sObjectMgr.GetPlayerLevelInfo(getRace(), plClass, level, &info);
+
+#ifdef ENABLE_MODULES
+    sModuleMgr.OnGetPlayerLevelInfo(this, info);
+#endif
 
     PlayerClassLevelInfo classInfo;
     sObjectMgr.GetPlayerClassLevelInfo(plClass, level, &classInfo);
@@ -2851,6 +2896,10 @@ void Player::GiveLevel(uint32 level)
     // resend quests status directly
     GetSession()->SetCurrentPlayerLevel(level);
     SendQuestGiverStatusMultiple();
+
+#ifdef ENABLE_MODULES
+    sModuleMgr.OnGiveLevel(this, level);
+#endif
 }
 
 void Player::UpdateFreeTalentPoints(bool resetIfNeed)
@@ -2903,6 +2952,10 @@ void Player::InitStatsForLevel(bool reapplyMods)
 
     PlayerLevelInfo info;
     sObjectMgr.GetPlayerLevelInfo(getRace(), plClass, level, &info);
+	
+#ifdef ENABLE_MODULES
+    sModuleMgr.OnGetPlayerLevelInfo(this, info);
+#endif
 
     SetUInt32Value(PLAYER_FIELD_MAX_LEVEL, sObjectMgr.GetMaxLevelForExpansion(GetSession()->GetExpansion()));
     SetUInt32Value(PLAYER_NEXT_LEVEL_XP, GetMaxAttainableLevel() <= level ? 0 : sObjectMgr.GetXPForLevel(level));
@@ -3572,6 +3625,10 @@ bool Player::addSpell(uint32 spell_id, bool active, bool learning, bool dependen
         }
     }
 
+#ifdef ENABLE_MODULES
+    sModuleMgr.OnAddSpell(this, spell_id);
+#endif
+
     // return true (for send learn packet) only if spell active (in case ranked spells) and not replace old spell
     return active && !disabled && !superceded_old;
 }
@@ -3972,6 +4029,10 @@ bool Player::resetTalents(bool no_cost)
         m_resetTalentsCost = cost;
         m_resetTalentsTime = time(nullptr);
     }
+
+#ifdef ENABLE_MODULES
+    sModuleMgr.OnResetTalents(this, cost);
+#endif
 
     // FIXME: remove pet before or after unlearn spells? for now after unlearn to allow removing of talent related, pet affecting auras
     RemovePet(PET_SAVE_REAGENTS);
@@ -4386,6 +4447,11 @@ void Player::DeleteFromDB(ObjectGuid playerguid, uint32 accountId, bool updateRe
             CharacterDatabase.PExecute("DELETE FROM guild_eventlog WHERE PlayerGuid1 = '%u' OR PlayerGuid2 = '%u'", lowguid, lowguid);
             CharacterDatabase.PExecute("DELETE FROM guild_bank_eventlog WHERE PlayerGuid = '%u'", lowguid);
             CharacterDatabase.CommitTransaction();
+			
+#ifdef ENABLE_MODULES
+            sModuleMgr.OnDeleteFromDB(lowguid);
+#endif
+			
             break;
         }
         // The character gets unlinked from the account, the name gets freed up and appears as deleted ingame
@@ -4490,6 +4556,11 @@ void Player::BuildPlayerRepop()
 
 void Player::ResurrectPlayer(float restore_percent, bool applySickness)
 {
+#ifdef ENABLE_MODULES
+    if (sModuleMgr.OnPreResurrect(this))
+        return;
+#endif
+	
     WorldPacket data(SMSG_DEATH_RELEASE_LOC, 4 * 4);        // remove spirit healer position
     data << uint32(-1);
     data << float(0);
@@ -4537,6 +4608,10 @@ void Player::ResurrectPlayer(float restore_percent, bool applySickness)
     if (IsInWorld())
         if (InstanceData* instanceData = GetMap()->GetInstanceData())
             instanceData->OnPlayerResurrect(this);
+
+#ifdef ENABLE_MODULES
+    sModuleMgr.OnResurrect(this);
+#endif
 
     if (!applySickness)
         return;
@@ -4970,6 +5045,10 @@ void Player::RepopAtGraveyard()
         if (updateVisibility && IsInWorld())
             UpdateVisibilityAndView();
     }
+
+#ifdef ENABLE_MODULES
+    sModuleMgr.OnReleaseSpirit(this, ClosestGrave);
+#endif
 }
 
 void Player::JoinedChannel(Channel* c)
@@ -5384,6 +5463,10 @@ bool Player::UpdateSkill(uint16 id, uint16 diff)
         if (skillStatus.uState != SKILL_NEW)
             skillStatus.uState = SKILL_CHANGED;
 
+#ifdef ENABLE_MODULES
+        sModuleMgr.OnUpdateSkill(this, id);
+#endif
+
         return true;
     }
 
@@ -5543,6 +5626,10 @@ bool Player::UpdateSkillPro(uint16 SkillId, int32 Chance, uint16 diff)
         if (skillStatus.uState != SKILL_NEW)
             skillStatus.uState = SKILL_CHANGED;
 
+#ifdef ENABLE_MODULES
+        sModuleMgr.OnUpdateSkill(this, SkillId);
+#endif
+
         DEBUG_LOG("Player::UpdateSkillPro Chance=%3.1f%% taken", Chance / 10.0);
         return true;
     }
@@ -5675,6 +5762,10 @@ void Player::SetSkill(SkillStatusMap::iterator itr, uint16 value, uint16 max, ui
 
         if (status.uState != SKILL_NEW)
             status.uState = SKILL_CHANGED;
+
+#ifdef ENABLE_MODULES
+        sModuleMgr.OnUpdateSkill(this, id);
+#endif
     }
     else        // Remove
     {
@@ -6520,6 +6611,10 @@ void Player::CheckAreaExploreAndOutdoor()
                 SendExplorationExperience(area, XP);
             }
             DETAIL_LOG("PLAYER: Player %u discovered a new area: %u", GetGUIDLow(), area);
+
+#ifdef ENABLE_MODULES
+            sModuleMgr.OnAreaExplored(this, area);
+#endif
         }
     }
 }
@@ -6771,6 +6866,10 @@ void Player::UpdateHonorFields()
     }
 
     m_lastHonorUpdateTime = now;
+	
+#ifdef ENABLE_MODULES
+    sModuleMgr.OnUpdateHonor(this);
+#endif
 }
 
 /// Calculate the amount of honor gained based on the victim
@@ -6895,6 +6994,11 @@ bool Player::RewardHonor(Unit* uVictim, uint32 groupsize, float honor)
     ModifyHonorPoints(int32(honor));
 
     ApplyModUInt32Value(PLAYER_FIELD_TODAY_CONTRIBUTION, uint32(honor), true);
+	
+#ifdef ENABLE_MODULES
+    sModuleMgr.OnRewardHonor(this, uVictim);
+#endif
+	
     return true;
 }
 
@@ -7251,6 +7355,10 @@ void Player::DuelComplete(DuelCompleteType type)
     SetUInt32Value(PLAYER_DUEL_TEAM, 0);
     duel->opponent->SetGuidValue(PLAYER_DUEL_ARBITER, ObjectGuid());
     duel->opponent->SetUInt32Value(PLAYER_DUEL_TEAM, 0);
+
+#ifdef ENABLE_MODULES
+    sModuleMgr.OnDuelComplete(this, duel->opponent, type);
+#endif
 
     delete duel->opponent->duel;
     duel->opponent->duel = nullptr;
@@ -10409,6 +10517,10 @@ Item* Player::StoreItem(ItemPosCountVec const& dest, Item* pItem, bool update)
         lastItem = _StoreItem(pos, pItem, count, true, update);
     }
 
+#ifdef ENABLE_MODULES
+    sModuleMgr.OnStoreItem(this, lastItem);
+#endif
+
     return lastItem;
 }
 
@@ -10586,6 +10698,10 @@ Item* Player::EquipItem(uint16 pos, Item* pItem, bool update)
             UpdateWeaponDependantStats(OFF_ATTACK);
         else if (slot == EQUIPMENT_SLOT_RANGED)
             UpdateWeaponDependantStats(RANGED_ATTACK);
+
+#ifdef ENABLE_MODULES
+        sModuleMgr.OnEquipItem(this, pItem);
+#endif
     }
     else
     {
@@ -10610,6 +10726,10 @@ Item* Player::EquipItem(uint16 pos, Item* pItem, bool update)
 
         ApplyEquipCooldown(pItem2);
 
+#ifdef ENABLE_MODULES
+        sModuleMgr.OnEquipItem(this, pItem2);
+#endif
+
         return pItem2;
     }
 
@@ -10632,6 +10752,10 @@ void Player::QuickEquipItem(uint16 pos, Item* pItem)
             pItem->AddToWorld();
             pItem->SendCreateUpdateToPlayer(this);
         }
+
+#ifdef ENABLE_MODULES
+        sModuleMgr.OnEquipItem(this, pItem);
+#endif
     }
 }
 
@@ -10664,6 +10788,10 @@ void Player::SetVisibleItemSlot(uint8 slot, Item* pItem)
         SetUInt32Value(PLAYER_VISIBLE_ITEM_1_PROPERTIES + 0 + (slot * MAX_VISIBLE_ITEM_OFFSET), 0);
         SetUInt32Value(PLAYER_VISIBLE_ITEM_1_PROPERTIES + 1 + (slot * MAX_VISIBLE_ITEM_OFFSET), 0);
     }
+
+#ifdef ENABLE_MODULES
+    sModuleMgr.OnSetVisibleItemSlot(this, slot, pItem);
+#endif
 }
 
 void Player::VisualizeItem(uint8 slot, Item* pItem)
@@ -10788,6 +10916,10 @@ void Player::MoveItemFromInventory(uint8 bag, uint8 slot, bool update)
             it->RemoveFromWorld();
             it->DestroyForPlayer(this);
         }
+
+#ifdef ENABLE_MODULES
+        sModuleMgr.OnMoveItemFromInventory(this, it);
+#endif
     }
 }
 
@@ -10811,6 +10943,10 @@ void Player::MoveItemToInventory(ItemPosCountVec const& dest, Item* pItem, bool 
         // in case trade we already have item in other player inventory
         pLastItem->SetState(in_characterInventoryDB ? ITEM_CHANGED : ITEM_NEW, this);
     }
+
+#ifdef ENABLE_MODULES
+    sModuleMgr.OnMoveItemToInventory(this, pItem);
+#endif
 }
 
 void Player::DestroyItem(uint8 bag, uint8 slot, bool update)
@@ -13540,6 +13676,10 @@ void Player::RewardQuest(Quest const* pQuest, uint32 reward, Object* questGiver,
     // resend quests status directly
     UpdateForQuestWorldObjects();
     SendQuestGiverStatusMultiple();
+
+#ifdef ENABLE_MODULES
+    sModuleMgr.OnRewardQuest(this, pQuest);
+#endif
 }
 
 bool Player::IsQuestExplored(uint32 quest_id) const
@@ -14405,6 +14545,10 @@ void Player::KilledMonsterCredit(uint32 entry, ObjectGuid guid)
             }
         }
     }
+
+#ifdef ENABLE_MODULES
+    sModuleMgr.OnKilledMonsterCredit(this, entry, guid);
+#endif
 }
 
 void Player::CastedCreatureOrGO(uint32 entry, ObjectGuid guid, uint32 spell_id, bool original_caster)
@@ -15064,6 +15208,10 @@ bool Player::LoadFromDB(ObjectGuid guid, SqlQueryHolder* holder)
         return false;
     }
 
+#ifdef ENABLE_MODULES
+    sModuleMgr.OnPreLoadFromDB(this);
+#endif
+
     // overwrite possible wrong/corrupted guid
     SetGuidValue(OBJECT_FIELD_GUID, guid);
 
@@ -15647,12 +15795,21 @@ bool Player::LoadFromDB(ObjectGuid guid, SqlQueryHolder* holder)
     _LoadDeclinedNames(holder->GetResult(PLAYER_LOGIN_QUERY_LOADDECLINEDNAMES));
 
     _LoadCreatedInstanceTimers();
+	
+#ifdef ENABLE_MODULES
+    sModuleMgr.OnLoadFromDB(this);
+#endif
 
     return true;
 }
 
 void Player::_LoadActions(std::unique_ptr<QueryResult> queryResult)
 {
+#ifdef ENABLE_MODULES
+    if (sModuleMgr.OnLoadActionButtons(this, m_actionButtons))
+        return;
+#endif
+	
     m_actionButtons.clear();
 
     // QueryResult *result = CharacterDatabase.PQuery("SELECT button,action,type FROM character_action WHERE guid = '%u' ORDER BY button",GetGUIDLow());
@@ -16900,6 +17057,10 @@ void Player::SaveToDB()
     // save pet (hunter pet level and experience and all type pets health/mana except priest pet).
     if (Pet* pet = GetPet())
         pet->SavePetToDB(PET_SAVE_AS_CURRENT, this);
+	
+#ifdef ENABLE_MODULES
+    sModuleMgr.OnSaveToDB(this);
+#endif
 }
 
 // fast save function for item/money cheating preventing - save only inventory and money state
@@ -16919,6 +17080,11 @@ void Player::SaveGoldToDB() const
 
 void Player::_SaveActions()
 {
+#ifdef ENABLE_MODULES
+    if (sModuleMgr.OnSaveActionButtons(this, m_actionButtons))
+        return;
+#endif
+
     static SqlStatementID insertAction ;
     static SqlStatementID updateAction ;
     static SqlStatementID deleteAction ;
@@ -18635,6 +18801,10 @@ void Player::OnTaxiFlightRouteStart(uint32 pathID, bool initial)
         if (const TaxiPathEntry* path = sTaxiPathStore.LookupEntry(pathID))
             OnTaxiFlightStart(path);
     }
+
+#ifdef ENABLE_MODULES
+    sModuleMgr.OnTaxiFlightRouteStart(this, m_taxiTracker, initial);
+#endif
 }
 
 void Player::OnTaxiFlightRouteEnd(uint32 pathID, bool final)
@@ -18646,6 +18816,10 @@ void Player::OnTaxiFlightRouteEnd(uint32 pathID, bool final)
     }
     else
         ModifyMoney(-int32(m_taxiTracker.GetCost()));
+
+#ifdef ENABLE_MODULES
+    sModuleMgr.OnTaxiFlightRouteEnd(this, m_taxiTracker, final);
+#endif
 }
 
 void Player::OnTaxiFlightRouteProgress(const TaxiPathNodeEntry* node, const TaxiPathNodeEntry* next /*= nullptr*/)
@@ -20222,6 +20396,10 @@ void Player::SummonIfPossible(bool agree, ObjectGuid guid)
     if (BattleGround* bg = GetBattleGround())
         bg->HandlePlayerDroppedFlag(this);
 
+#ifdef ENABLE_MODULES
+    sModuleMgr.OnSummoned(this, m_summoner);
+#endif
+
     m_summon_expire = 0;
     m_summoner.Clear();
 
@@ -20444,6 +20622,11 @@ bool Player::isHonorOrXPTarget(Unit* pVictim) const
 
 void Player::RewardSinglePlayerAtKill(Unit* pVictim)
 {
+#ifdef ENABLE_MODULES
+    if (!sModuleMgr.OnPreRewardPlayerAtKill(this, pVictim))
+    {
+#endif
+
     // honor can be in PvP and !PvP (racial leader) cases
     RewardHonor(pVictim, 1);
 
@@ -20461,6 +20644,11 @@ void Player::RewardSinglePlayerAtKill(Unit* pVictim)
         if (CreatureInfo const* normalInfo = creatureVictim->GetCreatureInfo())
             KilledMonster(normalInfo, creatureVictim);
     }
+
+#ifdef ENABLE_MODULES
+    }
+    sModuleMgr.OnRewardPlayerAtKill(this, pVictim);
+#endif
 }
 
 void Player::RewardPlayerAndGroupAtEventCredit(uint32 creature_id, WorldObject* pRewardSource)
@@ -21382,6 +21570,12 @@ InventoryResult Player::CanEquipUniqueItem(ItemPrototype const* itemProto, uint8
 
 void Player::HandleFall(MovementInfo const& movementInfo)
 {
+#ifdef ENABLE_MODULES
+    uint32 damageReceived = 0;
+    if (!sModuleMgr.OnPreHandleFall(this, movementInfo, m_lastFallZ, damageReceived))
+    {
+#endif
+
     // calculate total z distance of the fall
     Position const& position = movementInfo.GetPos();
     float z_diff = m_lastFallZ - position.z;
@@ -21415,13 +21609,22 @@ void Player::HandleFall(MovementInfo const& movementInfo)
                 if (GetDummyAura(43621))
                     damage = GetMaxHealth() / 2;
 
+#ifdef ENABLE_MODULES
+                damageReceived = EnvironmentalDamage(DAMAGE_FALL, damage);
+#else
                 EnvironmentalDamage(DAMAGE_FALL, damage);
+#endif
             }
 
             // Z given by moveinfo, LastZ, FallTime, WaterZ, MapZ, Damage, Safefall reduction
             DEBUG_LOG("FALLDAMAGE z=%f sz=%f pZ=%f FallTime=%d mZ=%f damage=%d SF=%d", position.z, height, GetPositionZ(), movementInfo.GetFallTime(), height, damage, safe_fall);
         }
     }
+
+#ifdef ENABLE_MODULES
+    }
+    sModuleMgr.OnHandleFall(this, movementInfo, m_lastFallZ, damageReceived);
+#endif
 }
 
 void Player::LearnTalent(uint32 talentId, uint32 talentRank)
@@ -21538,6 +21741,10 @@ void Player::LearnTalent(uint32 talentId, uint32 talentRank)
     // learn! (other talent ranks will unlearned at learning)
     learnSpell(spellid, false, true);
     DETAIL_LOG("TalentID: %u Rank: %u Spell: %u\n", talentId, talentRank, spellid);
+
+#ifdef ENABLE_MODULES
+    sModuleMgr.OnLearnTalent(this, spellid);
+#endif
 }
 
 void Player::UpdateFallInformationIfNeed(MovementInfo const& minfo, uint16 opcode)
