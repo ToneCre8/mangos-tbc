@@ -1417,7 +1417,17 @@ class Player : public Unit
         void RegenerateHealth(uint32 diff);
 
         uint32 GetMoney() const { return GetUInt32Value(PLAYER_FIELD_COINAGE); }
-        void ModifyMoney(int32 d);
+        void ModifyMoney(int32 d)
+        {
+            if (d < 0)
+                SetMoney(GetMoney() > uint32(-d) ? GetMoney() + d : 0);
+            else
+                SetMoney(GetMoney() < uint32(MAX_MONEY_AMOUNT - d) ? GetMoney() + d : MAX_MONEY_AMOUNT);
+
+            // "At Gold Limit"
+            if (GetMoney() >= MAX_MONEY_AMOUNT)
+                SendEquipError(EQUIP_ERR_TOO_MUCH_GOLD, nullptr, nullptr);
+        }
         void SetMoney(uint32 value)
         {
             SetUInt32Value(PLAYER_FIELD_COINAGE, value);
@@ -2207,7 +2217,7 @@ class Player : public Unit
         // A Player can either have a playerbotMgr (to manage its bots), or have playerbotAI (if it is a bot), or
         // neither. Code that enables bots must create the playerbotMgr and set it using SetPlayerbotMgr.
         void UpdateAI(const uint32 diff, bool minimal = false);
-        void CreatePlayerbotAI(std::unique_ptr<PlayerbotAI> ai);
+        void CreatePlayerbotAI();
         void RemovePlayerbotAI();
         PlayerbotAI* GetPlayerbotAI() { return m_playerbotAI.get(); }
         void CreatePlayerbotMgr();
