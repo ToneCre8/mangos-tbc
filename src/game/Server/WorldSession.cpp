@@ -55,6 +55,10 @@
 #include "playerbot/playerbot.h"
 #endif
 
+#ifdef ENABLE_MODULES
+#include "ModuleMgr.h"
+#endif
+
 // select opcodes appropriate for processing in Map::Update context for current session state
 static bool MapSessionFilterHelper(WorldSession* session, OpcodeHandler const& opHandle)
 {
@@ -214,6 +218,10 @@ void WorldSession::SendPacket(WorldPacket const& packet, bool forcedSend /*= fal
         else if (GetPlayer()->GetPlayerbotMgr())
             GetPlayer()->GetPlayerbotMgr()->HandleMasterOutgoingPacket(packet);
     }
+#endif
+
+#ifdef ENABLE_MODULES
+    sModuleMgr.OnSessionSendPacket(packet);        
 #endif
 
     if (!m_socket || (m_sessionState != WORLD_SESSION_STATE_READY && !forcedSend))
