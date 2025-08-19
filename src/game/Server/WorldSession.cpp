@@ -221,7 +221,7 @@ void WorldSession::SendPacket(WorldPacket const& packet, bool forcedSend /*= fal
 #endif
 
 #ifdef ENABLE_MODULES
-    sModuleMgr.OnSessionSendPacket(packet);        
+    sModuleMgr.OnSessionSendPacket(*this, packet);     
 #endif
 
     if (!m_socket || (m_sessionState != WORLD_SESSION_STATE_READY && !forcedSend))
